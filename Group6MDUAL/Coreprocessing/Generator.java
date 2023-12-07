@@ -2,6 +2,7 @@ package MDUAL;
 
 import java.util.Scanner;
 import Coreprocessing.*;
+import MDUAL.*;
 
 public class Generator {
     public static void main(String[] args) {
