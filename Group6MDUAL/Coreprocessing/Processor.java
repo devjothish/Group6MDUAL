@@ -1,84 +1,73 @@
-package Coreprocessing;
+package MDUAL;
 
-import MDUAL.*;
-import java.io.IOException;
-import java.util.*;
+import java.util.Scanner;
+import Coreprocessing.*;
 
-public class Processor {
-    private DataQueryManager datasetManager = new DataQueryManager();
-    private DataQueryManager queryManager = new DataQueryManager();
-    private double cumulativeExecutionTime;
-    private double cumulativeMemoryUsage;
-    private MemoryCalculationStrategy performanceMonitor;
-    private String sourceDataset;
-    private String querySetIdentifier;
-    private int maxWindowSize;
-    private int slideIntervalGCD;
-    private int totalSlides;
-    public int outlierQueryCount;
-    public int detectedOutliers;
+public class Generator {
+    public static void main(String[] args) {
+        UserInput input = gatherInput();
+        QueryBuilder queryBuilder = new QueryBuilder(input.dataSource, input.windowSize, input.slideStep, input.kThreshold, input.variationScale);
 
-    public Processor(String sourceData, String querySet) throws IOException {
-        initializeDataset(sourceData);
-        initializeQuerySet(querySet);
-        this.sourceDataset = sourceData;
-        this.querySetIdentifier = querySet;
-        this.slideIntervalGCD = queryManager.getSlideIntervalGCD();
-        this.totalSlides = queryManager.getMaxWindowSize() / queryManager.getSlideIntervalGCD();
-        performanceMonitor = new MemoryCalculationStrategy();         
+        System.out.println(String.format("%10s %12s %10s %11s %8s %10s %11s", "QuerySet", "ChangeRate", "MemAvg", "MemPeak", "CPULoad", "Detected", "QueriesOut"));
+
+        runSimulations(queryBuilder, input);
     }
 
-    public void executeAnalysis(int windowSpan, int queryVolume, double queryChangeFactor) throws IOException {
-        MDUAL analysisAlgorithm = new MDUAL(datasetManager.getDimensions(), datasetManager.getDimensions(), totalSlides, slideIntervalGCD, datasetManager.getLowerBounds());
-        performanceMonitor.beginMonitoring();
+    private static UserInput gatherInput() {
+        Scanner scanner = new Scanner(System.in);
 
-        int processedWindows = 0;
-        int adjustedQueryVolume = (int) (queryVolume * queryChangeFactor);
-        int detectedOutliers = 0;
-        int outlierQueryCount = 0;
-        
-        for (int cycle = 0; cycle < windowSpan + totalSlides - 1; cycle++) {
-            Map<Integer, Query> activeQueries = queryManager.retrieveQueriesByRange(cycle * adjustedQueryVolume, queryVolume);
-            
-            if (activeQueries.isEmpty()) break;
-            List<Tuple> slideData = datasetManager.fetchSlideData(cycle, slideIntervalGCD);
-            if (slideData.isEmpty()) break;
-            Set<Tuple> identifiedOutliers = new HashSet<>();
+        System.out.print("Enter data source: ");
+        String dataSource = scanner.nextLine();
 
-            long startMoment = PerformanceMetric.getCPUTime();
-            identifiedOutliers = analysisAlgorithm.identifyOutliers(slideData, activeQueries, cycle);
+        System.out.print("Enter window size (W): ");
+        int windowSize = Integer.parseInt(scanner.nextLine());
 
-            long endMoment = Measure.getCPUTime();
-            long memoryConsumed = Measure.getMemory();
-            
-            if (cycle >= totalSlides - 1) {
-                detectedOutliers += identifiedOutliers.size();
-                for (Tuple t : identifiedOutliers) outlierQueryCount += t.getOutlierQueryIDs().size();
-                processedWindows++;
-                cumulativeExecutionTime += (endMoment - startMoment) / 1000000.0; // Convert to ms
-                cumulativeMemoryUsage += memoryConsumed;
-            }
+        System.out.print("Enter slide step (S): ");
+        int slideStep = Integer.parseInt(scanner.nextLine());
+
+        System.out.print("Enter K threshold: ");
+        int kThreshold = Integer.parseInt(scanner.nextLine());
+
+        System.out.print("Number of windows (N): ");
+        int numWindows = Integer.parseInt(scanner.nextLine());
+
+        System.out.println("Simulation will start. Press CTRL+C to stop.");
+        scanner.close();
+
+        return new UserInput(dataSource, windowSize, slideStep, kThreshold, numWindows, 10, 0.2, 5);
+    }
+
+    private static void runSimulations(QueryBuilder queryBuilder, UserInput input) {
+        int runIndex = 0;
+        while (runIndex < input.totalRuns) {
+            String querySet = queryBuilder.create(input.numWindows, input.queryCount, input.paramsToVary);
+            SimulationCoordinator simulation = new SimulationCoordinator();
+            simulation.run(input.numWindows, input.queryCount, input.queryChangeRate);
+            runIndex++;
         }
-
-        outputResults(windowSpan, queryVolume, queryChangeFactor, processedWindows);
-        performanceMonitor.beginMonitoring();
     }
 
-    private void initializeDataset(String data) throws IOException {
-        datasetManager.prepareData(data);
-    }
+    private static class UserInput {
+        String dataSource;
+        int windowSize;
+        int slideStep;
+        int kThreshold;
+        int numWindows;
+        int queryCount;
+        double queryChangeRate;
+        int totalRuns;
+        String[] paramsToVary;
 
-    private void initializeQuerySet(String querySet) throws IOException {
-        queryManager.setupQueries(querySet);
+        UserInput(String dataSource, int windowSize, int slideStep, int kThreshold, int numWindows, int queryCount, double queryChangeRate, int totalRuns) {
+            this.dataSource = dataSource;
+            this.windowSize = windowSize;
+            this.slideStep = slideStep;
+            this.kThreshold = kThreshold;
+            this.numWindows = numWindows;
+            this.queryCount = queryCount;
+            this.queryChangeRate = queryChangeRate;
+            this.totalRuns = totalRuns;
+            this.paramsToVary = new String[] {"R", "K", "S", "W"};
+        }
     }
-
-    private void outputResults(int windowSpan, int queryVolume, double queryChangeFactor, int processedWindows) {
-        int detectedOutliers = 0;
-        int outlierQueryCount = 0;
-        System.out.println(String.format("%-10s %10s %10.1f %10.2f %10.1f %10.1f %10d %10d", sourceDataset,
-                querySetIdentifier, queryChangeFactor, cumulativeExecutionTime / processedWindows,
-                cumulativeMemoryUsage / processedWindows, performanceMonitor.getPeakMemoryUsage(),
-                detectedOutliers / processedWindows, outlierQueryCount / processedWindows));
-    }
-
 }
